@@ -88,3 +88,4 @@ If a "simple change" in Pitch starts breaking other products, the leak is in the
 
 - `..\DRiX-Brain\` — shared core. Required dependency.
 - `..\DRiX-Ready-Leads-v2\` — original monorepo. Untouched. Pitch does not import from it.
+# DRiX-Ready-Pitch
