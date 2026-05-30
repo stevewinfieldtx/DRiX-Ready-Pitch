@@ -1,0 +1,603 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DRiX Ready Pitch</title>
+<style>
+  :root {
+    --bg: #f7f7f5;
+    --panel: #ffffff;
+    --ink: #1a1a1a;
+    --muted: #6b6b6b;
+    --line: #e3e3e0;
+    --accent: #0f5e9a;
+    --accent-hover: #0d4d7e;
+    --good: #2c8a4a;
+    --warn: #c47a1a;
+    --bad: #b13b3b;
+    --code-bg: #f1f1ee;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 32px 24px 80px; }
+  header { margin-bottom: 24px; }
+  header h1 { margin: 0; font-size: 22px; letter-spacing: -0.01em; }
+  header .sub { color: var(--muted); margin-top: 4px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+  .panel h2 { margin: 0 0 12px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .row.three { grid-template-columns: 1fr 1fr 1fr; }
+  .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+  .field label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  .field label .req { color: var(--bad); margin-left: 2px; }
+  .field input[type=text], .field input[type=number], .field input[type=url], .field textarea, .field select {
+    border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font: inherit; background: #fff; color: var(--ink);
+  }
+  .field textarea { min-height: 70px; resize: vertical; font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  .field input:focus, .field textarea:focus, .field select:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+  .actions { display: flex; gap: 12px; align-items: center; margin-top: 8px; }
+  button.primary { background: var(--accent); color: #fff; border: 0; padding: 10px 18px; border-radius: 6px; font: inherit; font-weight: 600; cursor: pointer; }
+  button.primary:hover { background: var(--accent-hover); }
+  button.primary:disabled { background: #aaa; cursor: not-allowed; }
+  button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); padding: 9px 14px; border-radius: 6px; font: inherit; cursor: pointer; }
+  .status { color: var(--muted); font-size: 13px; }
+  .status.err { color: var(--bad); }
+  #results { margin-top: 24px; }
+  #results.hidden { display: none; }
+  .result-section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 20px; margin-bottom: 14px; }
+  .result-section h3 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+  .result-section .body { font-size: 14px; }
+  .lead-with { font-size: 17px; font-weight: 500; line-height: 1.45; color: var(--ink); padding: 14px 16px; background: #fff8e6; border-left: 3px solid var(--warn); border-radius: 4px; }
+  .next-move { font-size: 15px; line-height: 1.5; padding: 14px 16px; background: #e8f4ec; border-left: 3px solid var(--good); border-radius: 4px; }
+  .script { font-size: 14px; line-height: 1.65; padding: 14px 16px; background: var(--code-bg); border-radius: 4px; font-style: italic; }
+  .pain-card { padding: 12px 14px; border: 1px solid var(--line); border-radius: 6px; margin-bottom: 8px; }
+  .pain-card .head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 6px; }
+  .pain-card .head .name { font-weight: 600; }
+  .pain-card .head .sev { font-size: 11px; padding: 2px 8px; border-radius: 999px; font-weight: 600; }
+  .sev.high { background: #fbe3e3; color: var(--bad); }
+  .sev.mid { background: #fbeed3; color: var(--warn); }
+  .sev.low { background: #e0eee4; color: var(--good); }
+  .pain-card .ev { color: var(--muted); font-size: 13px; }
+  ul.talking { padding-left: 18px; margin: 0; }
+  ul.talking li { margin-bottom: 6px; }
+  .q-card { border: 1px solid var(--line); border-radius: 6px; margin-bottom: 12px; overflow: hidden; }
+  .q-card summary { cursor: pointer; padding: 12px 14px; background: #fafaf8; font-weight: 600; list-style: none; display: flex; justify-content: space-between; align-items: center; }
+  .q-card summary::-webkit-details-marker { display: none; }
+  .q-card summary .stage-tag { font-size: 10px; padding: 2px 7px; background: var(--accent); color: #fff; border-radius: 3px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700; }
+  .q-card .q-body { padding: 12px 14px; }
+  .q-card .q-text { font-size: 15px; margin-bottom: 8px; font-weight: 500; }
+  .q-card .meta { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+  .q-card .meta strong { color: var(--ink); }
+  .resp-group { margin-top: 10px; }
+  .resp-group h4 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); margin: 6px 0; }
+  .resp-group.good h4 { color: var(--good); }
+  .resp-group.bad h4 { color: var(--bad); }
+  .resp { padding: 8px 10px; border-radius: 4px; margin-bottom: 6px; font-size: 13px; }
+  .resp.good { background: #f0f7f2; }
+  .resp.bad { background: #fbf2f2; }
+  .resp .quote { font-style: italic; color: var(--muted); }
+  .resp .reply { margin-top: 4px; font-weight: 500; }
+  .resp .reply::before { content: "→ "; color: var(--muted); }
+  .obj { padding: 12px 14px; background: #fbf2f2; border-left: 3px solid var(--bad); border-radius: 4px; }
+  .obj .objection { font-style: italic; color: var(--muted); margin-bottom: 8px; }
+  .obj .reply { font-weight: 500; }
+  .comp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .comp-grid .cell { padding: 10px 12px; background: #fafaf8; border-radius: 4px; }
+  .comp-grid .cell .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); margin-bottom: 4px; }
+  .conf { display: flex; align-items: baseline; gap: 12px; }
+  .conf .score { font-size: 32px; font-weight: 700; line-height: 1; }
+  .conf .notes { color: var(--muted); font-size: 13px; }
+  .summary-box { padding: 12px 14px; background: #fafaf8; border-radius: 4px; }
+  .summary-box .industry { font-size: 11px; color: var(--accent); text-transform: uppercase; letter-spacing: 0.08em; margin-top: 6px; font-weight: 600; }
+  .meta-row { display: flex; gap: 16px; color: var(--muted); font-size: 12px; margin-bottom: 16px; }
+  .meta-row span strong { color: var(--ink); }
+  details.raw { margin-top: 24px; }
+  details.raw summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+  details.raw pre { background: var(--code-bg); padding: 14px; border-radius: 6px; overflow: auto; font-size: 12px; line-height: 1.45; }
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #ccc; border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle; margin-right: 6px; }
+
+  .profile-panel { background: #f0f4f8; border: 1px solid #c4d4e3; }
+  .profile-panel summary { cursor: pointer; padding: 14px 20px; list-style: none; display: flex; justify-content: space-between; align-items: center; font-weight: 600; color: var(--accent); }
+  .profile-panel summary::-webkit-details-marker { display: none; }
+  .profile-panel summary .badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; font-weight: 700; }
+  .profile-panel summary .badge.set { background: #d4ead9; color: var(--good); }
+  .profile-panel summary .badge.unset { background: #fbe3e3; color: var(--bad); }
+  .profile-panel .profile-body { padding: 0 20px 20px; }
+  .profile-saved-flash { color: var(--good); font-size: 12px; font-weight: 600; margin-left: 8px; opacity: 0; transition: opacity 0.3s; }
+  .profile-saved-flash.show { opacity: 1; }
+
+  .email-card { border: 1px solid var(--line); border-radius: 6px; margin-bottom: 10px; overflow: hidden; }
+  .email-card .e-head { padding: 10px 14px; background: #eef3f8; display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .email-card .e-step { font-size: 10px; font-weight: 700; background: var(--accent); color: #fff; padding: 2px 8px; border-radius: 3px; letter-spacing: 0.05em; }
+  .email-card .e-label { font-weight: 600; flex: 1; }
+  .email-card .e-day { font-size: 11px; padding: 2px 8px; background: #fff; border: 1px solid #c4d4e3; border-radius: 999px; color: var(--accent); font-weight: 600; }
+  .email-card .e-body-wrap { padding: 12px 14px; }
+  .email-card .e-purpose { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); margin-bottom: 8px; }
+  .email-card .e-subject { font-weight: 600; font-size: 14px; margin-bottom: 8px; padding: 8px 10px; background: #fafaf8; border-left: 3px solid var(--accent); border-radius: 3px; }
+  .email-card .e-subject-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); font-weight: 700; margin-right: 6px; }
+  .email-card .e-body { white-space: pre-wrap; font-size: 13.5px; line-height: 1.55; padding: 12px; background: #fff; border: 1px solid var(--line); border-radius: 4px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  .email-card .e-nores { margin-top: 10px; font-size: 12px; color: var(--muted); font-style: italic; padding: 8px 10px; background: #fdf6e3; border-left: 2px solid var(--warn); border-radius: 3px; }
+  .email-card .e-actions { display: flex; gap: 6px; margin-top: 8px; }
+  .email-card .copy-btn { font-size: 11px; padding: 3px 10px; background: transparent; border: 1px solid var(--line); border-radius: 4px; cursor: pointer; color: var(--muted); }
+  .email-card .copy-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .email-card .copy-btn.copied { background: var(--good); color: #fff; border-color: var(--good); }
+
+  .cache-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .cache-badge.hit { background: #d4ead9; color: var(--good); }
+  .cache-badge.miss { background: #eef3f8; color: var(--accent); }
+  .force-refresh { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); cursor: pointer; user-select: none; }
+  .force-refresh input { width: 16px; height: 16px; cursor: pointer; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>DRiX Ready Pitch</h1>
+    <div class="sub">ONE customer · ONE meeting · ONE pitch — cheat sheet generator</div>
+  </header>
+
+  <details class="panel profile-panel" id="profilePanel">
+    <summary>
+      <span>Your Profile <span style="color: var(--muted); font-weight: 400; font-size: 13px;">— shared across every pitch you run on this browser</span></span>
+      <span id="profileBadge" class="badge unset">NOT SET</span>
+    </summary>
+    <div class="profile-body">
+      <div class="row">
+        <div class="field">
+          <label>Your company name (reseller)</label>
+          <input type="text" id="prof_name" placeholder="e.g. NYN Impact">
+        </div>
+        <div class="field">
+          <label>Your company URL</label>
+          <input type="text" id="prof_url" placeholder="www.nynimpact.com  (https:// added automatically)">
+        </div>
+      </div>
+      <div class="field">
+        <label>CPP — Communication Personality Profile (paste full text)</label>
+        <textarea id="prof_cpp" rows="6" placeholder="Paste the CPP that defines your tone, voice, and writing style. Pitch does NOT use CPP today (no emails generated). Saved here so it carries forward when you start using Campaign."></textarea>
+      </div>
+      <div class="actions">
+        <button type="button" class="primary" id="saveProfileBtn">Save Profile</button>
+        <button type="button" class="secondary" id="clearProfileBtn">Clear</button>
+        <span id="profileSaved" class="profile-saved-flash">✓ Saved</span>
+      </div>
+    </div>
+  </details>
+
+  <form id="form">
+
+    <div class="panel">
+      <h2>Customer</h2>
+      <div class="field">
+        <label>Customer URL <span class="req">*</span></label>
+        <input type="text" name="customer_url" required placeholder="www.acme.com  (https:// added automatically)" autofocus>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label>Industry (optional — AI infers if blank)</label>
+          <input type="text" name="industry" placeholder="e.g. Legal Services, Healthcare, Manufacturing">
+        </div>
+        <div class="field">
+          <label>Title of contact (optional)</label>
+          <input type="text" name="title" placeholder="e.g. CFO, CISO, IT Manager, Owner">
+        </div>
+      </div>
+      <div class="field">
+        <label>Customer background (optional, private to your reseller)</label>
+        <textarea name="customer_background" placeholder="Anything you know that's not on their public site — recent breach, renewal date, internal politics, etc."></textarea>
+      </div>
+      <div class="row three">
+        <div class="field">
+          <label>Individual name</label>
+          <input type="text" name="ind_name" placeholder="optional">
+        </div>
+        <div class="field">
+          <label>Individual role</label>
+          <input type="text" name="ind_role" placeholder="optional">
+        </div>
+        <div class="field">
+          <label>Individual notes</label>
+          <input type="text" name="ind_notes" placeholder="optional">
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Solution</h2>
+      <div class="row">
+        <div class="field">
+          <label>Solution URL <span class="req">*</span></label>
+          <input type="text" name="solution_url" required placeholder="www.yoursolution.com/product  (https:// added automatically)">
+        </div>
+        <div class="field">
+          <label>Crawl depth (child folders)</label>
+          <input type="number" name="crawl_depth" min="0" max="10" value="3">
+        </div>
+      </div>
+      <div class="field">
+        <label>Solution background (optional)</label>
+        <textarea name="solution_background" placeholder="Anything that makes this solution different — special pricing for verticals, recent product release, etc."></textarea>
+      </div>
+      <div class="field">
+        <label>Competing product (optional — when set, output includes competitive section)</label>
+        <input type="text" name="competing_product" placeholder="e.g. Microsoft Defender, Norton, the in-house tool they built">
+      </div>
+    </div>
+
+    <div class="actions">
+      <button type="submit" class="primary" id="submitBtn">Generate Pitch</button>
+      <button type="button" class="secondary" id="resetBtn">Clear</button>
+      <label class="force-refresh" title="Skip cache — always call the LLM fresh"><input type="checkbox" id="forceRefresh"> Force refresh (skip cache)</label>
+      <span id="status" class="status"></span>
+    </div>
+
+  </form>
+
+  <div id="results" class="hidden"></div>
+
+</div>
+
+<script>
+
+// ─── Profile (reseller + CPP) — persisted in localStorage ───────────────────
+const PROFILE_KEY = 'drix.ready.pitch.profile.v1';
+function loadProfile() {
+  try { return JSON.parse(localStorage.getItem(PROFILE_KEY) || '{}'); } catch { return {}; }
+}
+function saveProfile(p) { localStorage.setItem(PROFILE_KEY, JSON.stringify(p)); }
+function refreshProfileBadge() {
+  const p = loadProfile();
+  const badge = document.getElementById('profileBadge');
+  const isSet = !!(p.reseller_name || p.reseller_url || p.cpp);
+  badge.textContent = isSet ? 'SET' : 'NOT SET';
+  badge.className = 'badge ' + (isSet ? 'set' : 'unset');
+}
+function hydrateProfileUI() {
+  const p = loadProfile();
+  document.getElementById('prof_name').value = p.reseller_name || '';
+  document.getElementById('prof_url').value = p.reseller_url || '';
+  document.getElementById('prof_cpp').value = p.cpp || '';
+  refreshProfileBadge();
+  // Open the panel automatically if empty (first-time user)
+  if (!p.reseller_name && !p.reseller_url && !p.cpp) {
+    document.getElementById('profilePanel').open = true;
+  }
+}
+document.getElementById('saveProfileBtn').addEventListener('click', () => {
+  const p = {
+    reseller_name: document.getElementById('prof_name').value.trim() || undefined,
+    reseller_url: document.getElementById('prof_url').value.trim() || undefined,
+    cpp: document.getElementById('prof_cpp').value.trim() || undefined,
+  };
+  saveProfile(p);
+  refreshProfileBadge();
+  const flash = document.getElementById('profileSaved');
+  flash.classList.add('show');
+  setTimeout(() => flash.classList.remove('show'), 1500);
+});
+document.getElementById('clearProfileBtn').addEventListener('click', () => {
+  if (!confirm('Clear your saved profile from this browser?')) return;
+  localStorage.removeItem(PROFILE_KEY);
+  document.getElementById('prof_name').value = '';
+  document.getElementById('prof_url').value = '';
+  document.getElementById('prof_cpp').value = '';
+  refreshProfileBadge();
+});
+hydrateProfileUI();
+
+const form = document.getElementById('form');
+const resultsEl = document.getElementById('results');
+const statusEl = document.getElementById('status');
+const submitBtn = document.getElementById('submitBtn');
+document.getElementById('resetBtn').addEventListener('click', () => {
+  form.reset();
+  resultsEl.classList.add('hidden');
+  resultsEl.innerHTML = '';
+  statusEl.textContent = '';
+});
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(form);
+  const normalizeUrl = (u) => {
+    let s = (u || '').trim();
+    if (!s) return s;
+    if (!/^https?:\/\//i.test(s)) s = 'https://' + s.replace(/^\/+/, '');
+    return s;
+  };
+  const forceRefresh = document.getElementById('forceRefresh').checked;
+  const payload = {
+    force_refresh: forceRefresh || undefined,
+    customer: {
+      url: normalizeUrl(fd.get('customer_url')),
+      background: (fd.get('customer_background') || '').trim() || undefined,
+      individual: (fd.get('ind_name') || fd.get('ind_role') || fd.get('ind_notes'))
+        ? {
+            name: (fd.get('ind_name') || '').trim() || undefined,
+            role: (fd.get('ind_role') || '').trim() || undefined,
+            notes: (fd.get('ind_notes') || '').trim() || undefined,
+          }
+        : undefined,
+    },
+    solution: {
+      url: normalizeUrl(fd.get('solution_url')),
+      background: (fd.get('solution_background') || '').trim() || undefined,
+      competing_product: (fd.get('competing_product') || '').trim() || undefined,
+      crawl_depth: parseInt(fd.get('crawl_depth') || '3', 10),
+    },
+    title: (fd.get('title') || '').trim() || undefined,
+    industry: (fd.get('industry') || '').trim() || undefined,
+    reseller_context: (() => {
+      const p = loadProfile();
+      const norm = (u) => { if (!u) return undefined; return /^https?:\/\//i.test(u) ? u : ('https://' + u.replace(/^\/+/, '')); };
+      if (!p.reseller_name && !p.reseller_url && !p.cpp) return undefined;
+      return {
+        company: p.reseller_name,
+        company_url: norm(p.reseller_url),
+        cpp_summary: p.cpp,  // Pitch ignores CPP. Carried for Campaign.
+      };
+    })(),
+  };
+
+  submitBtn.disabled = true;
+  statusEl.classList.remove('err');
+  statusEl.innerHTML = '<span class="spinner"></span> Generating — this typically takes 20-45 seconds…';
+  resultsEl.classList.add('hidden');
+  resultsEl.innerHTML = '';
+
+  const t0 = Date.now();
+  try {
+    const res = await fetch('/api/pitch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || ('HTTP ' + res.status));
+    }
+    statusEl.textContent = 'Generated in ' + elapsed + 's · run_id ' + (data.run_id || '?');
+    renderResult(data);
+  } catch (err) {
+    statusEl.classList.add('err');
+    statusEl.textContent = 'Error: ' + err.message;
+  } finally {
+    submitBtn.disabled = false;
+  }
+});
+
+function sevClass(n) { if (n >= 80) return 'high'; if (n >= 50) return 'mid'; return 'low'; }
+function esc(s) {
+  if (s === null || s === undefined) return '';
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function renderResult(data) {
+  const p = data.pitch;
+  const parts = [];
+
+  // Meta row
+  const cacheBadge = data.cached
+    ? '<span class="cache-badge hit">✓ Cached ' + cacheAge(data.cached_age_seconds) + ' (instant)</span>'
+    : '<span class="cache-badge miss">Fresh ' + (data.elapsed_ms / 1000).toFixed(1) + 's</span>';
+  const scrapeBadges = (data.inputs_echo && data.inputs_echo.scrape_from_cache)
+    ? Object.entries(data.inputs_echo.scrape_from_cache).filter(([k,v]) => v).map(([k,v]) => '<span style="font-size:11px;color:var(--muted)">scrape:' + k + ' ✓</span>').join(' ')
+    : '';
+  parts.push(
+    '<div class="meta-row">' +
+    cacheBadge + ' ' +
+    '<span>Run: <strong>' + esc(data.run_id) + '</strong></span>' +
+    '<span>Reseller: <strong>' + esc(data.reseller_id || 'anonymous') + '</strong></span>' +
+    '<span>Crawl depth: <strong>' + esc(data.inputs_echo.crawl_depth) + '</strong></span>' +
+    (data.inputs_echo.competing_product ? '<span>Competitor: <strong>' + esc(data.inputs_echo.competing_product) + '</strong></span>' : '') +
+    (scrapeBadges ? '<span>' + scrapeBadges + '</span>' : '') +
+    '</div>'
+  );
+
+  function cacheAge(seconds) {
+    if (!seconds || seconds < 60) return 'just now';
+    if (seconds < 3600) return Math.round(seconds/60) + 'm ago';
+    if (seconds < 86400) return Math.round(seconds/3600) + 'h ago';
+    return Math.round(seconds/86400) + 'd ago';
+  }
+
+  // Customer summary
+  parts.push(
+    '<div class="result-section">' +
+    '<h3>Customer Summary</h3>' +
+    '<div class="summary-box">' + esc(p.customer_summary) +
+    (p.industry_inferred ? '<div class="industry">' + esc(p.industry_inferred) + '</div>' : '') +
+    '</div></div>'
+  );
+
+  // Pain points
+  if (p.pain_points && p.pain_points.length) {
+    parts.push(
+      '<div class="result-section"><h3>Pain Points</h3><div class="body">' +
+      p.pain_points.map(pp =>
+        '<div class="pain-card">' +
+        '<div class="head"><div class="name">' + esc(pp.headline) + '</div>' +
+        '<span class="sev ' + sevClass(pp.severity) + '">SEV ' + esc(pp.severity) + '</span></div>' +
+        '<div class="ev">' + esc(pp.evidence) + '</div>' +
+        '</div>'
+      ).join('') +
+      '</div></div>'
+    );
+  }
+
+  // Lead with
+  parts.push(
+    '<div class="result-section"><h3>Lead With This</h3>' +
+    '<div class="lead-with">' + esc(p.lead_with) + '</div></div>'
+  );
+
+  // Talking points
+  if (p.talking_points && p.talking_points.length) {
+    parts.push(
+      '<div class="result-section"><h3>Talking Points</h3>' +
+      '<ul class="talking">' + p.talking_points.map(tp => '<li>' + esc(tp) + '</li>').join('') + '</ul>' +
+      '</div>'
+    );
+  }
+
+  // Discovery questions
+  if (p.discovery_questions && p.discovery_questions.length) {
+    parts.push(
+      '<div class="result-section"><h3>Discovery Questions (3-stage)</h3>' +
+      p.discovery_questions.map((q, idx) =>
+        '<details class="q-card"' + (idx === 0 ? ' open' : '') + '>' +
+        '<summary><span>Q' + (idx + 1) + ' — ' + esc(q.question.length > 90 ? q.question.slice(0, 90) + '…' : q.question) + '</span>' +
+        '<span class="stage-tag">' + esc(q.stage) + '</span></summary>' +
+        '<div class="q-body">' +
+        '<div class="q-text">' + esc(q.question) + '</div>' +
+        '<div class="meta"><strong>Purpose:</strong> ' + esc(q.purpose) +
+        ' · <strong>Targets:</strong> ' + esc(q.pain_it_targets) +
+        ' · <strong>Tone:</strong> ' + esc(q.tone_guidance) + '</div>' +
+        renderResponses(q.positive_responses, 'good', 'If they respond positively') +
+        renderResponses(q.neutral_negative_responses, 'bad', 'If they push back or stall') +
+        '</div></details>'
+      ).join('') +
+      '</div>'
+    );
+  }
+
+  // Top objection
+  if (p.top_objection) {
+    parts.push(
+      '<div class="result-section"><h3>Top Objection</h3>' +
+      '<div class="obj">' +
+      '<div class="objection">"' + esc(p.top_objection.objection) + '"</div>' +
+      '<div class="reply">→ ' + esc(p.top_objection.response) + '</div>' +
+      '</div></div>'
+    );
+  }
+
+  // Competitive (conditional)
+  if (p.competitive) {
+    const c = p.competitive;
+    parts.push(
+      '<div class="result-section"><h3>Competitive vs ' + esc(c.competitor_name) + '</h3>' +
+      '<div class="comp-grid">' +
+      '<div class="cell"><div class="label">Their Strength (honest)</div>' + esc(c.their_strength) + '</div>' +
+      '<div class="cell"><div class="label">Your Edge</div>' + esc(c.your_edge) + '</div>' +
+      '<div class="cell"><div class="label">Landmine Question</div>' + esc(c.landmine_question) + '</div>' +
+      '<div class="cell"><div class="label">If they say…</div>' +
+      '<div class="quote" style="font-style:italic;color:var(--muted);margin-bottom:6px">"' + esc(c.if_they_say.response) + '"</div>' +
+      '<div>→ ' + esc(c.if_they_say.rep_says) + '</div></div>' +
+      '</div></div>'
+    );
+  }
+
+  // Email drip — pre-meeting outreach sequence
+  parts.push(renderEmailDrip(p.email_drip, p._incomplete_emails));
+
+  // 30s script
+  parts.push(
+    '<div class="result-section"><h3>30-Second Script</h3>' +
+    '<div class="script">' + esc(p.script_30s) + '</div></div>'
+  );
+
+  // Next move
+  if (p.next_move) {
+    parts.push(
+      '<div class="result-section"><h3>Next Move (24-48h)</h3>' +
+      '<div class="next-move">' + esc(p.next_move) + '</div></div>'
+    );
+  }
+
+  // Confidence
+  if (p.confidence) {
+    parts.push(
+      '<div class="result-section"><h3>Confidence</h3>' +
+      '<div class="conf"><div class="score">' + esc(p.confidence.score) + '</div>' +
+      '<div class="notes">' + esc(p.confidence.notes) + '</div></div></div>'
+    );
+  }
+
+  // Raw JSON toggle
+  parts.push(
+    '<details class="raw"><summary>Show raw JSON</summary>' +
+    '<pre>' + esc(JSON.stringify(data, null, 2)) + '</pre></details>'
+  );
+
+  resultsEl.innerHTML = parts.join('');
+  resultsEl.classList.remove('hidden');
+  resultsEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+
+function renderEmailDrip(emails, incompleteFlags) {
+  if (!emails || !emails.length) return '';
+  const incompleteIds = new Set((incompleteFlags || []).map(f => {
+    const m = f.match(/email\[(\d+)\]/);
+    return m ? parseInt(m[1], 10) : null;
+  }).filter(x => x !== null));
+  return '<div class="result-section"><h3>Email Drip — to land the meeting</h3>' +
+    emails.map((em, idx) => {
+      const subj = em.subject || '';
+      const body = em.body || '';
+      const subjId = 'subj_' + idx;
+      const bodyId = 'body_' + idx;
+      const incompleteWarn = incompleteIds.has(idx) ? '<div class="e-nores" style="background:#fbe3e3;border-left-color:var(--bad);color:var(--bad)">⚠ LLM omitted subject or body for this email — re-run for a complete drip</div>' : '';
+      return '<div class="email-card">' +
+        '<div class="e-head">' +
+        '<span class="e-step">EMAIL ' + (em.step || (idx+1)) + '</span>' +
+        '<span class="e-label">' + esc(em.label || '') + '</span>' +
+        '<span class="e-day">' + esc(em.send_day || em.sendDay || '') + '</span>' +
+        '</div>' +
+        '<div class="e-body-wrap">' +
+        (em.purpose ? '<div class="e-purpose">' + esc(em.purpose) + '</div>' : '') +
+        '<div class="e-subject"><span class="e-subject-label">SUBJECT</span>' + esc(subj) + '</div>' +
+        '<div id="' + bodyId + '" class="e-body">' + esc(body) + '</div>' +
+        '<div class="e-actions">' +
+        '<button type="button" class="copy-btn" data-copy="' + bodyId + '">Copy body</button>' +
+        '<button type="button" class="copy-btn" data-copy-text="' + esc(subj).replace(/"/g, '&quot;') + '">Copy subject</button>' +
+        '</div>' +
+        (em.if_no_response ? '<div class="e-nores"><strong>If no response:</strong> ' + esc(em.if_no_response) + '</div>' : '') +
+        incompleteWarn +
+        '</div></div>';
+    }).join('') +
+    '</div>';
+}
+
+// Wire copy buttons via event delegation
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('.copy-btn');
+  if (!btn) return;
+  let text = '';
+  if (btn.dataset.copy) {
+    const el = document.getElementById(btn.dataset.copy);
+    if (el) text = el.innerText;
+  } else if (btn.dataset.copyText) {
+    text = btn.dataset.copyText;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    const original = btn.textContent;
+    btn.textContent = '✓ Copied';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = original; btn.classList.remove('copied'); }, 1200);
+  } catch (err) {
+    btn.textContent = 'Copy failed';
+  }
+});
+
+function renderResponses(arr, kind, label) {
+  if (!arr || !arr.length) return '';
+  const key = kind === 'good' ? 'next_step' : 'pivot';
+  return '<div class="resp-group ' + kind + '"><h4>' + label + '</h4>' +
+    arr.map(r =>
+      '<div class="resp ' + kind + '">' +
+      '<div class="quote">"' + esc(r.response) + '"</div>' +
+      '<div class="reply">' + (r[key] ? esc(r[key]) : '<em style="color:var(--bad)">⚠ LLM omitted ' + key + ' — re-run for a complete pitch</em>') + '</div>' +
+      '</div>'
+    ).join('') +
+    '</div>';
+}
+</script>
+</body>
+</html>
