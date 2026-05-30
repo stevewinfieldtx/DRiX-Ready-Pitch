@@ -15,11 +15,13 @@ const crypto = require('crypto');
 
 const brain = require('drix-brain');           // local helpers (callLLM, fetchAndStrip) — run in this process
 const brainClient = require('drix-brain/client'); // HTTP client — calls brain Railway service for cache/auth/TDE
-const { PITCH_KIT_PROMPT, PITCH_EMAILS_PROMPT, PITCH_KIT_SCHEMA, PITCH_EMAILS_SCHEMA } = require('./prompts/pitch');
+const { PITCH_KIT_PROMPT, PITCH_EMAILS_PROMPT, PITCH_COACH_PROMPT, PITCH_KIT_SCHEMA, PITCH_EMAILS_SCHEMA } = require('./prompts/pitch');
 
 const app = express();
 const PORT = process.env.PORT || 3002;
 const CRAWL_DEPTH_DEFAULT = parseInt(process.env.PITCH_CRAWL_DEPTH_DEFAULT || '3', 10);
+const ELEVENLABS_API_KEY  = process.env.ELEVENLABS_API_KEY || '';
+const COACH_VOICE_ID      = process.env.COACH_VOICE_ID || 'JBFqnCBsd6RMkjVDRZzb';
 
 app.use(express.json({ limit: '10mb' }));
 // Accept bare domains ("acme.com") and prepend https:// if missing. Defense in
@@ -454,6 +456,167 @@ app.post('/api/pitch/upload-solution-doc', upload.single('file'), async (req, re
     note: 'v0.1: file received but text extraction is stubbed. Wire to brain ingestor in v0.2.'
   });
 });
+
+
+// ─── COACH (text chat + voice) ─────────────────────────────────────────────
+// Both endpoints take the FULL pitch result as context (sent by the GUI from
+// its in-memory state). No server-side run store — Pitch is stateless on the
+// pitch object. Cache lives in brain's pitch_cache; THAT is the durable copy.
+
+// Convert a pitch result into a compact human-readable context the coach can read.
+function buildPitchCoachContext(pitch, inputs) {
+  const lines = [];
+  if (inputs?.customer_url)  lines.push('CUSTOMER URL: ' + inputs.customer_url);
+  if (inputs?.solution_url)  lines.push('SOLUTION URL: ' + inputs.solution_url);
+  if (inputs?.title)         lines.push('CONTACT TITLE: ' + inputs.title);
+  if (inputs?.industry_provided || pitch.industry_inferred) {
+    lines.push('INDUSTRY: ' + (inputs?.industry_provided || pitch.industry_inferred));
+  }
+  if (inputs?.competing_product) lines.push('COMPETING PRODUCT: ' + inputs.competing_product);
+  lines.push('');
+  if (pitch.customer_summary) lines.push('CUSTOMER SUMMARY:\n' + pitch.customer_summary);
+  if (Array.isArray(pitch.pain_points) && pitch.pain_points.length) {
+    lines.push('\nPAIN POINTS:');
+    pitch.pain_points.forEach(p => {
+      lines.push(`  - [${p.id}] ${p.headline} (severity ${p.severity}) — evidence: ${p.evidence}`);
+    });
+  }
+  if (pitch.lead_with)  lines.push('\nLEAD WITH: ' + pitch.lead_with);
+  if (Array.isArray(pitch.talking_points)) {
+    lines.push('\nTALKING POINTS:');
+    pitch.talking_points.forEach((t, i) => lines.push(`  ${i+1}. ${t}`));
+  }
+  if (Array.isArray(pitch.discovery_questions)) {
+    lines.push('\nDISCOVERY QUESTIONS:');
+    pitch.discovery_questions.forEach(q => {
+      lines.push(`  [${q.stage}] ${q.question}`);
+      lines.push(`    purpose: ${q.purpose} | targets: ${q.pain_it_targets} | tone: ${q.tone_guidance}`);
+      (q.positive_responses || []).forEach(r => lines.push(`    + "${r.response}" → "${r.next_step}"`));
+      (q.neutral_negative_responses || []).forEach(r => lines.push(`    - "${r.response}" → "${r.pivot}"`));
+    });
+  }
+  if (pitch.top_objection) {
+    lines.push('\nTOP OBJECTION:');
+    lines.push('  ' + pitch.top_objection.objection);
+    lines.push('  RESPONSE: ' + pitch.top_objection.response);
+  }
+  if (pitch.competitive) {
+    const c = pitch.competitive;
+    lines.push('\nCOMPETITIVE vs ' + c.competitor_name + ':');
+    lines.push('  THEIR STRENGTH: ' + c.their_strength);
+    lines.push('  YOUR EDGE: ' + c.your_edge);
+    lines.push('  LANDMINE Q: ' + c.landmine_question);
+    if (c.if_they_say) lines.push(`  IF THEY SAY "${c.if_they_say.response}" → "${c.if_they_say.rep_says}"`);
+  }
+  if (pitch.script_30s) lines.push('\n30-SECOND SCRIPT: ' + pitch.script_30s);
+  if (pitch.next_move)  lines.push('\nNEXT MOVE: ' + pitch.next_move);
+  if (Array.isArray(pitch.email_drip)) {
+    lines.push('\nEMAIL DRIP:');
+    pitch.email_drip.forEach(em => {
+      lines.push(`  ${em.step}. [${em.send_day}] ${em.label} — "${em.subject}"`);
+      lines.push(`    body: ${em.body}`);
+      if (em.if_no_response) lines.push(`    if no response: ${em.if_no_response}`);
+    });
+  }
+  return lines.join('\n');
+}
+
+// ─── POST /api/pitch/chat ──────────────────────────────────────────────────
+// Body: { pitch_context, inputs_echo, history, user_message }
+app.post('/api/pitch/chat', async (req, res) => {
+  try {
+    const { pitch_context, inputs_echo, history, user_message } = req.body || {};
+    if (!pitch_context || !user_message) return res.status(400).json({ error: 'pitch_context and user_message required' });
+
+    const context = buildPitchCoachContext(pitch_context, inputs_echo);
+    const userPayload = JSON.stringify({
+      pitch_context_summary: context,
+      history: Array.isArray(history) ? history.slice(-20) : [],
+      new_question: user_message
+    });
+
+    const result = await brain.callLLM(PITCH_COACH_PROMPT, userPayload, { maxTokens: 1500, temperature: 0.5, retries: 1 });
+    const reply = result?.reply || (typeof result === 'string' ? result : JSON.stringify(result));
+    res.json({ reply });
+  } catch (err) {
+    console.error('[coach-chat]', err.message);
+    res.status(502).json({ error: 'Coach failed: ' + err.message });
+  }
+});
+
+// ─── POST /api/pitch/coach-voice/provision ─────────────────────────────────
+// Body: { pitch_context, inputs_echo }  → { agent_id }
+// Creates an ElevenLabs Convai agent with the pitch baked into the system prompt.
+// Caches per inputs_echo.customer_url + solution_url so a re-provision returns same agent.
+
+const _voiceAgentStore = new Map(); // key: customer_url+solution_url → { agent_id, created_at }
+
+app.post('/api/pitch/coach-voice/provision', async (req, res) => {
+  if (!ELEVENLABS_API_KEY) return res.status(503).json({ error: 'ELEVENLABS_API_KEY not configured' });
+  try {
+    const { pitch_context, inputs_echo } = req.body || {};
+    if (!pitch_context) return res.status(400).json({ error: 'pitch_context required' });
+
+    const key = (inputs_echo?.customer_url || '') + '||' + (inputs_echo?.solution_url || '');
+    if (_voiceAgentStore.has(key)) {
+      return res.json({ agent_id: _voiceAgentStore.get(key).agent_id, reused: true });
+    }
+
+    const context = buildPitchCoachContext(pitch_context, inputs_echo);
+    const custName = (inputs_echo?.customer_url || 'target customer').replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+
+    const voicePrompt = PITCH_COACH_PROMPT +
+      '\n\n---\nPITCH INTELLIGENCE:\n' + context + '\n---\n\n' +
+      'ADDITIONAL VOICE RULES:\n' +
+      '- You are on a voice call. Keep responses spoken-length (2-3 sentences per turn unless they ask for more).\n' +
+      '- Leave room for back-and-forth. Don\'t monologue.\n' +
+      '- When delivering scripts, say "Here is what I would say:" then deliver it in natural spoken cadence.\n' +
+      '- If they want to roleplay the prospect, commit to the character fully.\n';
+
+    const payload = {
+      name: `DRiX Pitch Coach - ${custName}`,
+      conversation_config: {
+        agent: {
+          prompt: { prompt: voicePrompt, llm: 'gpt-4o', temperature: 0.6 },
+          first_message: `Hey — I have got your pitch for ${custName} loaded up. Pain points, discovery sequence, top objection, the drip, all of it. What do you want to work on?`,
+          language: 'en'
+        },
+        tts: { voice_id: COACH_VOICE_ID }
+      }
+    };
+
+    const elRes = await fetch('https://api.elevenlabs.io/v1/convai/agents/create', {
+      method: 'POST',
+      headers: { 'xi-api-key': ELEVENLABS_API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!elRes.ok) {
+      const txt = await elRes.text();
+      throw new Error(`ElevenLabs ${elRes.status}: ${txt.slice(0, 300)}`);
+    }
+    const result = await elRes.json();
+    const agent_id = result.agent_id;
+    _voiceAgentStore.set(key, { agent_id, created_at: Date.now() });
+
+    // GC voice agents older than 2 hours
+    const cutoff = Date.now() - 2 * 3600 * 1000;
+    for (const [k, v] of _voiceAgentStore.entries()) {
+      if (v.created_at < cutoff) {
+        fetch(`https://api.elevenlabs.io/v1/convai/agents/${v.agent_id}`, {
+          method: 'DELETE', headers: { 'xi-api-key': ELEVENLABS_API_KEY }
+        }).catch(() => {});
+        _voiceAgentStore.delete(k);
+      }
+    }
+
+    console.log(`[coach-voice] Provisioned agent ${agent_id} for ${custName}`);
+    res.json({ agent_id, reused: false });
+  } catch (err) {
+    console.error('[coach-voice]', err.message);
+    res.status(502).json({ error: 'Voice provisioning failed: ' + err.message });
+  }
+});
+
 
 // "/" is now served by express.static above (public/index.html).
 // If public/ is missing, browser will get a 404; api/* still works.

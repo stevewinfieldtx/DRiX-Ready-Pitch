@@ -128,6 +128,26 @@
   .cache-badge.miss { background: #eef3f8; color: var(--accent); }
   .force-refresh { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); cursor: pointer; user-select: none; }
   .force-refresh input { width: 16px; height: 16px; cursor: pointer; }
+
+  .coach-panel { background: #fff; border: 2px solid var(--accent); border-radius: 8px; padding: 0; margin: 20px 0; overflow: hidden; }
+  .coach-panel .coach-head { padding: 14px 20px; background: var(--accent); color: #fff; display: flex; justify-content: space-between; align-items: center; }
+  .coach-panel .coach-head h3 { margin: 0; font-size: 14px; text-transform: uppercase; letter-spacing: 0.08em; color: #fff; }
+  .coach-panel .voice-launcher { display: flex; align-items: center; gap: 12px; padding: 14px 20px; background: #eef4f8; border-bottom: 1px solid var(--line); }
+  .coach-panel .voice-launcher button { background: var(--accent); color: #fff; border: 0; padding: 8px 16px; border-radius: 6px; font: inherit; font-weight: 600; cursor: pointer; }
+  .coach-panel .voice-launcher button:hover { background: var(--accent-hover); }
+  .coach-panel .voice-launcher button:disabled { background: #aaa; cursor: not-allowed; }
+  .coach-panel #voice-widget-area { padding: 0 20px; }
+  .coach-panel #voice-widget-area:not(:empty) { padding: 14px 20px; border-bottom: 1px solid var(--line); }
+  .coach-panel .chat-area { padding: 16px 20px; }
+  .coach-panel .chat-log { min-height: 80px; max-height: 360px; overflow-y: auto; padding: 8px 0; margin-bottom: 12px; }
+  .coach-panel .chat-bubble { margin-bottom: 10px; padding: 10px 14px; border-radius: 8px; font-size: 14px; line-height: 1.45; max-width: 92%; }
+  .coach-panel .chat-bubble.user { background: #e8eef5; margin-left: auto; text-align: right; }
+  .coach-panel .chat-bubble.assistant { background: #fff8e6; border-left: 3px solid var(--warn); }
+  .coach-panel .chat-bubble .role { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 4px; font-weight: 700; }
+  .coach-panel .chat-input-row { display: flex; gap: 8px; }
+  .coach-panel .chat-input-row input { flex: 1; border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; font: inherit; }
+  .coach-panel .chat-input-row button { padding: 0 18px; }
+  .coach-panel .voice-launcher .vstatus { font-size: 12px; color: var(--muted); }
   @keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
@@ -370,6 +390,17 @@ form.addEventListener('submit', async (e) => {
   }
 });
 
+
+function resolvePainTargets(idStr, pains) {
+  if (!idStr || !Array.isArray(pains)) return idStr || '';
+  // idStr may be "p2" or "p1, p3" or "p1 and p2"
+  const ids = String(idStr).split(/[,\s/]+/).map(s => s.trim()).filter(Boolean);
+  const map = {};
+  pains.forEach(p => { if (p.id) map[p.id] = p.headline || p.id; });
+  const resolved = ids.map(id => map[id] || id);
+  return resolved.join(' · ');
+}
+
 function sevClass(n) { if (n >= 80) return 'high'; if (n >= 50) return 'mid'; return 'low'; }
 function esc(s) {
   if (s === null || s === undefined) return '';
@@ -455,7 +486,7 @@ function renderResult(data) {
         '<div class="q-body">' +
         '<div class="q-text">' + esc(q.question) + '</div>' +
         '<div class="meta"><strong>Purpose:</strong> ' + esc(q.purpose) +
-        ' · <strong>Targets:</strong> ' + esc(q.pain_it_targets) +
+        ' · <strong>Targets:</strong> ' + esc(resolvePainTargets(q.pain_it_targets, p.pain_points)) +
         ' · <strong>Tone:</strong> ' + esc(q.tone_guidance) + '</div>' +
         renderResponses(q.positive_responses, 'good', 'If they respond positively') +
         renderResponses(q.neutral_negative_responses, 'bad', 'If they push back or stall') +
@@ -526,6 +557,14 @@ function renderResult(data) {
 
   resultsEl.innerHTML = parts.join('');
   resultsEl.classList.remove('hidden');
+  // Stash for coach panel
+  _latestPitch = data.pitch;
+  _latestInputsEcho = data.inputs_echo;
+  _chatHistory = [];
+  // Coach panel appended AFTER the result-sections
+  const coachContainer = document.createElement('div');
+  resultsEl.appendChild(coachContainer);
+  renderCoachPanel(coachContainer);
   resultsEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
@@ -585,6 +624,113 @@ document.addEventListener('click', async (e) => {
     btn.textContent = 'Copy failed';
   }
 });
+
+
+// ─── Coach (text chat + ElevenLabs voice) ──────────────────────────────────
+let _latestPitch = null;      // full pitch object from /api/pitch
+let _latestInputsEcho = null; // for voice provisioning
+let _chatHistory = [];        // [{role:'user'|'assistant', content:'...'}]
+
+function renderCoachPanel(targetEl) {
+  targetEl.innerHTML = ''
+    + '<div class="coach-panel">'
+    +   '<div class="coach-head"><h3>Coach — Chat & Voice</h3><span style="font-size:11px;opacity:0.85">grounded in this exact pitch</span></div>'
+    +   '<div class="voice-launcher">'
+    +     '<button type="button" id="voiceBtn">Start voice coach</button>'
+    +     '<span class="vstatus" id="voiceStatus">Provisions an ElevenLabs voice agent loaded with this pitch.</span>'
+    +   '</div>'
+    +   '<div id="voice-widget-area"></div>'
+    +   '<div class="chat-area">'
+    +     '<div id="chatLog" class="chat-log"></div>'
+    +     '<div class="chat-input-row">'
+    +       '<input type="text" id="chatInput" placeholder="Ask the coach anything — \"roleplay the CFO objection\" or \"how do I open the call?\"">'
+    +       '<button type="button" class="primary" id="chatSendBtn">Send</button>'
+    +     '</div>'
+    +   '</div>'
+    + '</div>';
+
+  document.getElementById('chatSendBtn').addEventListener('click', sendChat);
+  document.getElementById('chatInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChat(); });
+  document.getElementById('voiceBtn').addEventListener('click', startVoiceCoach);
+}
+
+async function sendChat() {
+  const input = document.getElementById('chatInput');
+  const text = input.value.trim();
+  if (!text || !_latestPitch) return;
+  appendChatBubble('user', text);
+  input.value = '';
+  appendChatBubble('assistant', '...', 'thinking');
+  try {
+    const r = await fetch('/api/pitch/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        pitch_context: _latestPitch,
+        inputs_echo: _latestInputsEcho,
+        history: _chatHistory,
+        user_message: text
+      })
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+    replaceThinkingBubble(data.reply || '(no response)');
+    _chatHistory.push({ role: 'user', content: text });
+    _chatHistory.push({ role: 'assistant', content: data.reply || '' });
+  } catch (e) {
+    replaceThinkingBubble('Error: ' + e.message);
+  }
+}
+
+function appendChatBubble(role, text, marker) {
+  const log = document.getElementById('chatLog');
+  const div = document.createElement('div');
+  div.className = 'chat-bubble ' + role + (marker ? ' ' + marker : '');
+  div.innerHTML = '<div class="role">' + (role === 'user' ? 'You' : 'Coach') + '</div>' + esc(text);
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+function replaceThinkingBubble(text) {
+  const log = document.getElementById('chatLog');
+  const thinking = log.querySelector('.chat-bubble.thinking');
+  if (thinking) {
+    thinking.classList.remove('thinking');
+    thinking.innerHTML = '<div class="role">Coach</div>' + esc(text);
+    log.scrollTop = log.scrollHeight;
+  } else {
+    appendChatBubble('assistant', text);
+  }
+}
+
+async function startVoiceCoach() {
+  const btn = document.getElementById('voiceBtn');
+  const status = document.getElementById('voiceStatus');
+  const area = document.getElementById('voice-widget-area');
+  if (!_latestPitch) { status.textContent = 'Generate a pitch first.'; return; }
+  btn.disabled = true;
+  status.textContent = 'Provisioning voice agent...';
+  try {
+    const r = await fetch('/api/pitch/coach-voice/provision', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pitch_context: _latestPitch, inputs_echo: _latestInputsEcho })
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+    area.innerHTML = '<elevenlabs-convai agent-id="' + esc(data.agent_id) + '"></elevenlabs-convai>';
+    if (!document.querySelector('script[src*="elevenlabs.io/convai-widget"]')) {
+      const s = document.createElement('script');
+      s.src = 'https://elevenlabs.io/convai-widget/index.js';
+      s.async = true; s.type = 'text/javascript';
+      document.head.appendChild(s);
+    }
+    status.textContent = data.reused ? 'Voice agent loaded (reused).' : 'Voice agent ready. Click the widget to talk.';
+  } catch (e) {
+    status.textContent = 'Voice provisioning failed: ' + e.message;
+    btn.disabled = false;
+  }
+}
 
 function renderResponses(arr, kind, label) {
   if (!arr || !arr.length) return '';

@@ -10,6 +10,7 @@ const path = require('path');
 
 const PITCH_KIT_PROMPT = fs.readFileSync(path.join(__dirname, 'pitch-kit.txt'), 'utf8');
 const PITCH_EMAILS_PROMPT = fs.readFileSync(path.join(__dirname, 'pitch-emails.txt'), 'utf8');
+const PITCH_COACH_PROMPT  = fs.readFileSync(path.join(__dirname, 'pitch-coach.txt'),  'utf8');
 const PITCH_SYSTEM_PROMPT = PITCH_KIT_PROMPT; // back-compat
 
 // ─── Schemas ──────────────────────────────────────────────────────────────
@@ -144,6 +145,7 @@ const PITCH_EMAILS_SCHEMA = {
 module.exports = {
   PITCH_KIT_PROMPT,
   PITCH_EMAILS_PROMPT,
+  PITCH_COACH_PROMPT,
   PITCH_SYSTEM_PROMPT,
   PITCH_KIT_SCHEMA,
   PITCH_EMAILS_SCHEMA
