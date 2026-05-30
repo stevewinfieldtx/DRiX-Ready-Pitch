@@ -15,7 +15,7 @@ const crypto = require('crypto');
 
 const brain = require('drix-brain');           // local helpers (callLLM, fetchAndStrip) — run in this process
 const brainClient = require('drix-brain/client'); // HTTP client — calls brain Railway service for cache/auth/TDE
-const { PITCH_KIT_PROMPT, PITCH_EMAILS_PROMPT } = require('./prompts/pitch');
+const { PITCH_KIT_PROMPT, PITCH_EMAILS_PROMPT, PITCH_KIT_SCHEMA, PITCH_EMAILS_SCHEMA } = require('./prompts/pitch');
 
 const app = express();
 const PORT = process.env.PORT || 3002;
@@ -109,6 +109,45 @@ app.get('/healthz', (_req, res) => {
     port: PORT
   });
 });
+
+
+// Scan a kit result for missing pivot/next_step fields in discovery_questions.
+// Returns array of dotted-path strings of missing fields. Empty array = complete.
+function findIncompleteFields(kit) {
+  const missing = [];
+  const qs = Array.isArray(kit?.discovery_questions) ? kit.discovery_questions : [];
+  qs.forEach((q, i) => {
+    const tag = q.stage || ('q' + (i+1));
+    (q.positive_responses || []).forEach((r, j) => {
+      if (!r.next_step) missing.push(tag + '.positive_responses[' + j + '].next_step');
+    });
+    (q.neutral_negative_responses || []).forEach((r, j) => {
+      if (!r.pivot) missing.push(tag + '.neutral_negative_responses[' + j + '].pivot');
+    });
+  });
+  return missing;
+}
+
+// Merge two kit results — prefer fields from `b` only where `a`'s field was empty.
+// Used after a retry to take the complete fields from whichever call had them.
+function mergeKitsPreferComplete(a, b) {
+  const out = JSON.parse(JSON.stringify(a)); // deep clone
+  const qsA = out.discovery_questions || [];
+  const qsB = b?.discovery_questions || [];
+  qsA.forEach((qa, i) => {
+    const qb = qsB[i];
+    if (!qb) return;
+    (qa.positive_responses || []).forEach((ra, j) => {
+      const rb = (qb.positive_responses || [])[j];
+      if (rb && !ra.next_step && rb.next_step) ra.next_step = rb.next_step;
+    });
+    (qa.neutral_negative_responses || []).forEach((ra, j) => {
+      const rb = (qb.neutral_negative_responses || [])[j];
+      if (rb && !ra.pivot && rb.pivot) ra.pivot = rb.pivot;
+    });
+  });
+  return out;
+}
 
 // ─── /api/pitch ─────────────────────────────────────────────────────────────
 // Intake → fetch customer + solution → LLM → structured cheat sheet
@@ -253,15 +292,34 @@ app.post('/api/pitch', async (req, res) => {
     console.log(`[${run_id}] calling LLM (kit + emails in parallel)`);
     const payloadStr = JSON.stringify(llmPayload);
     const [kitSettled, emailsSettled] = await Promise.allSettled([
-      brain.callLLM(PITCH_KIT_PROMPT,    payloadStr, { maxTokens: 7000, temperature: 0.4, retries: 1 }),
-      brain.callLLM(PITCH_EMAILS_PROMPT, payloadStr, { maxTokens: 5000, temperature: 0.5, retries: 1 }),
+      brain.callLLM(PITCH_KIT_PROMPT,    payloadStr, { maxTokens: 7000, temperature: 0.2, retries: 1, responseSchema: PITCH_KIT_SCHEMA }),
+      brain.callLLM(PITCH_EMAILS_PROMPT, payloadStr, { maxTokens: 5000, temperature: 0.5, retries: 1, responseSchema: PITCH_EMAILS_SCHEMA }),
     ]);
 
     if (kitSettled.status === 'rejected') {
       console.error(`[${run_id}] KIT call failed:`, kitSettled.reason?.message);
       return res.status(502).json({ ok: false, run_id, error: 'Kit generation failed: ' + (kitSettled.reason?.message || 'unknown') });
     }
-    const kit = kitSettled.value;
+    let kit = kitSettled.value;
+
+    // RETRY-ON-INCOMPLETE: Sonnet sometimes drops nested pivot/next_step fields.
+    // If detected, fire one targeted retry and merge — take the populated field
+    // from whichever attempt had it. Only retries the kit (emails are separate).
+    const initialMissing = findIncompleteFields(kit);
+    if (initialMissing.length > 0) {
+      console.warn(`[${run_id}] kit had ${initialMissing.length} missing fields, retrying once...`);
+      try {
+        const kitRetry = await brain.callLLM(PITCH_KIT_PROMPT, payloadStr, { maxTokens: 7000, temperature: 0.2, retries: 0, responseSchema: PITCH_KIT_SCHEMA });
+        const merged = mergeKitsPreferComplete(kit, kitRetry);
+        const stillMissing = findIncompleteFields(merged);
+        if (stillMissing.length < initialMissing.length) {
+          console.log(`[${run_id}] retry filled ${initialMissing.length - stillMissing.length} of ${initialMissing.length} missing fields`);
+          kit = merged;
+        }
+      } catch (e) {
+        console.warn(`[${run_id}] kit retry failed (keeping original):`, e.message);
+      }
+    }
 
     // Emails are best-effort — if they fail we still return the kit with a warning,
     // so the rep at least gets meeting prep.
